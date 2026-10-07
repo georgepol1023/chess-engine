@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human Chess</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --ink: #1f1d1a; --muted: #6f6a61; --line: #e2ddd2;
+    --light: #ebe3d1; --dark: #a88b68; --accent: #2f6f5e; --accent-ink: #ffffff;
+    --sel: rgba(47, 111, 94, .55); --last: rgba(214, 177, 74, .45); --check: rgba(200, 60, 50, .7);
+    --arrow: 47, 111, 94; --bar: #d9e6e1; --warn: #b5442f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161715; --panel: #1f201d; --ink: #ecebe6; --muted: #9b998f; --line: #31322e;
+      --light: #c9bea6; --dark: #8a6f52; --accent: #5fb39a; --accent-ink: #0d1411;
+      --bar: #2a3a34; --warn: #e07a62;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .app { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px;
+         display: grid; grid-template-columns: 260px minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  h1 { font-size: 18px; margin: 0 0 2px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 14px; font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .panel + .panel { margin-top: 14px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  label { display: block; margin: 0 0 12px; font-size: 13px; }
+  label .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  label .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  select, input[type=number] { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font: inherit; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .check input { accent-color: var(--accent); margin: 0; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+           padding: 8px 12px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); width: 100%; font-weight: 600; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .actions button { flex: 1; }
+
+  .center { display: flex; flex-direction: column; gap: 10px; }
+  .player { display: flex; justify-content: space-between; align-items: center; padding: 0 2px; }
+  .player .name { font-weight: 600; }
+  .player .name small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .clock { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; padding: 4px 12px;
+           border-radius: 8px; background: var(--panel); border: 1px solid var(--line); min-width: 92px; text-align: center; }
+  .clock.running { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .clock.low { color: var(--warn); }
+  .clock.running.low { background: var(--warn); color: #fff; border-color: var(--warn); }
+  .boardwrap { position: relative; width: 100%; max-width: 600px; aspect-ratio: 1; margin: 0 auto;
+               border-radius: 6px; overflow: hidden; box-shadow: 0 2px 14px rgba(0,0,0,.12); }
+  .board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; }
+  .sq { position: relative; display: flex; align-items: center; justify-content: center; user-select: none; }
+  .sq.l { background: var(--light); } .sq.d { background: var(--dark); }
+  .sq.last::before, .sq.sel::before, .sq.chk::before { content: ""; position: absolute; inset: 0; }
+  .sq.last::before { background: var(--last); }
+  .sq.sel::before { background: var(--sel); }
+  .sq.chk::before { background: radial-gradient(circle, var(--check) 0%, transparent 72%); }
+  .sq.tgt::after { content: ""; position: absolute; width: 28%; height: 28%; border-radius: 50%; background: rgba(0,0,0,.22); }
+  .sq.tgt.cap::after { width: 86%; height: 86%; background: transparent; border: 5px solid rgba(0,0,0,.22); }
+  .sq.mine { cursor: pointer; } .sq.tgt { cursor: pointer; }
+  .pc { position: relative; z-index: 1; font-size: min(9.2vw, 58px); line-height: 1;
+        font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", serif; }
+  .pc.w { color: #fbfaf7; text-shadow: 0 0 1px #000, 0 0 1px #000, 0 0 1px #000, 0 1px 2px rgba(0,0,0,.4); }
+  .pc.b { color: #1b1a18; text-shadow: 0 0 1px rgba(255,255,255,.35), 0 1px 2px rgba(0,0,0,.3); }
+  .coord { position: absolute; font-size: 10px; font-weight: 700; opacity: .75; pointer-events: none; }
+  .coord.f { right: 3px; bottom: 1px; } .coord.r { left: 3px; top: 1px; }
+  .sq.l .coord { color: var(--dark); } .sq.d .coord { color: var(--light); }
+  svg.arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  .promo { position: absolute; inset: 0; z-index: 3; background: rgba(0,0,0,.45); display: none;
+           align-items: center; justify-content: center; }
+  .promo.on { display: flex; }
+  .promo div { display: flex; gap: 6px; background: var(--panel); padding: 10px; border-radius: 10px; }
+  .promo button { font-size: 40px; width: 64px; height: 64px; padding: 0; line-height: 1;
+                  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", serif; }
+  .banner { text-align: center; min-height: 22px; font-weight: 600; }
+  .banner.thinking { color: var(--muted); font-weight: 400; }
+
+  .cons { list-style: none; margin: 0; padding: 0; }
+  .cons li { display: grid; grid-template-columns: 54px 1fr 44px; gap: 8px; align-items: center; padding: 3px 0; font-variant-numeric: tabular-nums; }
+  .cons .san { font-weight: 600; }
+  .cons .bar { height: 10px; background: var(--bar); border-radius: 5px; overflow: hidden; }
+  .cons .bar i { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
+  .cons .pct { text-align: right; color: var(--muted); }
+  .cons li.played .san::after { content: " ←"; color: var(--accent); }
+  .facts { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin-top: 12px; font-size: 13px; }
+  .facts span:nth-child(odd) { color: var(--muted); }
+  .facts span:nth-child(even) { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .wdl { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 10px; }
+  .wdl i { display: block; height: 100%; }
+  .wdl .w { background: var(--accent); } .wdl .dr { background: #a9a59b; } .wdl .ls { background: var(--warn); }
+  .wdlkey { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .empty { color: var(--muted); font-size: 13px; }
+  .moves { display: grid; grid-template-columns: 32px 1fr 1fr; gap: 2px 8px; max-height: 260px; overflow-y: auto;
+           font-variant-numeric: tabular-nums; font-size: 13px; }
+  .moves .n { color: var(--muted); }
+  .err { color: var(--warn); font-size: 13px; margin-top: 8px; min-height: 18px; }
+
+  [hidden] { display: none !important; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--line);
+          border-radius: 10px; padding: 4px; }
+  .tabs button { flex: 1; border: 0; background: transparent; font-weight: 600; }
+  .tabs button.on { background: var(--accent); color: var(--accent-ink); }
+  .summary { font-size: 13px; margin: 10px 0; }
+  .summary div { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+  .summary div span:first-child { color: var(--muted); }
+  .glist { max-height: 430px; overflow-y: auto; margin: 0 -6px 10px; }
+  .gitem { display: grid; grid-template-columns: 24px 1fr; gap: 10px; padding: 6px; border-radius: 8px; cursor: pointer;
+           font-size: 13px; align-items: center; }
+  .gitem:hover { background: var(--bg); } .gitem.on { background: var(--bar); }
+  .gitem small { display: block; color: var(--muted); }
+  .res { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-weight: 700; font-size: 11px; }
+  .res.w { background: var(--accent); color: var(--accent-ink); }
+  .res.d { background: #a9a59b; color: #fff; } .res.l { background: var(--warn); color: #fff; }
+  .nav { display: flex; gap: 8px; max-width: 600px; margin: 0 auto; width: 100%; }
+  .nav button { flex: 1; font-size: 16px; }
+  .moves .mv { cursor: pointer; border-radius: 4px; padding: 0 4px; justify-self: start; }
+  .moves .mv:hover { background: var(--bg); }
+  .moves .mv.cur { background: var(--accent); color: var(--accent-ink); }
+  .hint { color: var(--muted); font-size: 12px; text-align: center; margin: 0; }
+
+  @media (max-width: 1000px) {
+    .app { grid-template-columns: 1fr; }
+    .center { order: -1; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Human Chess</h1>
+    <p class="sub">An engine that plays the move a human would.</p>
+    <div class="tabs"><button id="tabPlay" class="on">Play</button><button id="tabReplay">Replay</button></div>
+    <div class="panel" id="replayPanel" hidden>
+      <h2>Saved matches</h2>
+      <select id="fileSel"></select>
+      <div class="summary" id="summary"></div>
+      <div class="glist" id="glist"></div>
+      <button id="refreshBtn" style="width:100%">Refresh</button>
+    </div>
+    <div class="panel" id="playPanel">
+      <h2>New game</h2>
+      <label><div class="row"><span>Bot plays like</span><span class="val" id="eloV">1500</span></div>
+        <input type="range" id="elo" min="600" max="2900" step="50" value="1500"></label>
+      <label><div class="row"><span>Your rating</span><span class="val" id="yourV">1500</span></div>
+        <input type="range" id="your" min="600" max="2900" step="50" value="1500"></label>
+      <div class="two">
+        <label>You play<select id="color"><option value="white">White</option><option value="black">Black</option><option value="random">Random</option></select></label>
+        <label>Mode<select id="mode"><option value="sample">Sample</option><option value="top">Top</option></select></label>
+      </div>
+      <div class="two">
+        <label>Minutes<input type="number" id="minutes" min="0.5" max="60" step="0.5" value="5"></label>
+        <label>Increment (s)<input type="number" id="inc" min="0" max="60" value="3"></label>
+      </div>
+      <label><div class="row"><span>Temperature</span><span class="val" id="tempV">1.00</span></div>
+        <input type="range" id="temp" min="0.1" max="3" step="0.05" value="1"></label>
+      <div class="check"><input type="checkbox" id="timing" checked><label for="timing" style="margin:0">Human think times</label></div>
+      <div class="check"><input type="checkbox" id="arrows" checked><label for="arrows" style="margin:0">Show bot's ideas on the board</label></div>
+      <div class="check"><input type="checkbox" id="auto"><label for="auto" style="margin:0">Stockfish plays for me</label></div>
+      <label id="sfRow" style="display:none"><div class="row"><span>Stockfish strength</span><span class="val" id="sfV">1500</span></div>
+        <input type="range" id="sf" min="1320" max="3190" step="10" value="1500"></label>
+      <div class="check"><input type="checkbox" id="untimed"><label for="untimed" style="margin:0">No clock</label></div>
+      <button class="primary" id="newBtn" style="margin-top:8px">Start game</button>
+    </div>
+  </aside>
+
+  <main class="center">
+    <div class="player"><span class="name" id="topName">Bot</span><span class="clock" id="topClock">5:00</span></div>
+    <div class="boardwrap">
+      <div class="board" id="board"></div>
+      <svg class="arrows" id="arrowsSvg" viewBox="0 0 800 800"></svg>
+      <div class="promo" id="promo"><div id="promoBtns"></div></div>
+    </div>
+    <div class="player"><span class="name" id="botName">You</span><span class="clock" id="botClock">5:00</span></div>
+    <div class="banner" id="banner"></div>
+    <div class="actions" id="playActions" style="max-width:600px;margin:0 auto;width:100%">
+      <button id="undoBtn">Take back</button>
+      <button id="resignBtn">Resign</button>
+    </div>
+    <div class="nav" id="nav" hidden>
+      <button id="firstBtn" title="Start (Home)">&#x23EE;</button>
+      <button id="prevBtn" title="Back (left arrow)">&#x25C0;</button>
+      <button id="autoBtn" title="Play through (space)">&#x25B6; Play</button>
+      <button id="nextBtn" title="Forward (right arrow)">&#x25B6;</button>
+      <button id="lastBtn" title="End (End)">&#x23ED;</button>
+    </div>
+    <p class="hint" id="navHint" hidden>Arrow keys step through the game. The bot's ideas show after each of its moves.</p>
+  </main>
+
+  <aside>
+    <div class="panel">
+      <h2 id="consTitle">What the bot considered</h2>
+      <div id="cons"><p class="empty">The bot's options appear here after it moves.</p></div>
+      <div id="facts"></div>
+    </div>
+    <div class="panel">
+      <h2>Moves</h2>
+      <div class="moves" id="moves"></div>
+      <div class="err" id="err"></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+const VS = "︎";  // text presentation, so the pawn doesn't render as an emoji
+const FILES = "abcdefgh";
+
+let S = null;             // server state
+let sel = null;           // selected square
+let pendingPromo = null;  // {from, to}
+let thoughts = null;
+let clocks = { you: 300, bot: 300 };
+let ticking = null, tickFrom = 0, tickBase = 0;
+let busy = false, flagged = null, gameId = 0;
+
+for (const [id, v] of [["elo", "eloV"], ["your", "yourV"]])
+  $(id).oninput = () => $(v).textContent = $(id).value;
+$("sf").oninput = () => $("sfV").textContent = $("sf").value;
+$("auto").onchange = () => {
+  $("sfRow").style.display = $("auto").checked ? "" : "none";
+  if (S) { render(); if ($("auto").checked && yourTurn() && !busy) yourTurnStarts(); }
+};
+const auto = () => $("auto").checked;
+$("temp").oninput = () => $("tempV").textContent = (+$("temp").value).toFixed(2);
+$("arrows").onchange = drawArrows;
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function parseFen(fen) {
+  const map = {};
+  fen.split(" ")[0].split("/").forEach((row, i) => {
+    let f = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) { f += +ch; continue; }
+      map[FILES[f] + (8 - i)] = ch;
+      f++;
+    }
+  });
+  return map;
+}
+
+const untimed = () => $("untimed").checked;
+const fmt = s => {
+  if (untimed()) return "–";
+  s = Math.max(0, s);
+  if (s < 20) return s.toFixed(1);
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return `${m}:${String(r).padStart(2, "0")}`;
+};
+let R = null;             // replay: {files, game, k, cache, timer}
+const yourTurn = () => !R && S && !S.result && !flagged && S.turn === S.you;
+const ended = () => !S || S.result || flagged;
+
+function squares() {
+  const flip = S && S.you === "black";
+  const out = [];
+  for (let row = 0; row < 8; row++)
+    for (let col = 0; col < 8; col++) {
+      const f = flip ? 7 - col : col, r = flip ? row + 1 : 8 - row;
+      out.push({ name: FILES[f] + r, f, r, row, col });
+    }
+  return out;
+}
+
+function render() {
+  const pieces = parseFen(S.fen);
+  const targets = sel ? S.legal.filter(m => m.startsWith(sel)).map(m => m.slice(2, 4)) : [];
+  const last = S.last ? [S.last.slice(0, 2), S.last.slice(2, 4)] : [];
+  const mineColor = S.you === "white" ? /[A-Z]/ : /[a-z]/;
+  const board = $("board");
+  board.innerHTML = "";
+  for (const sq of squares()) {
+    const el = document.createElement("div");
+    el.className = "sq " + ((sq.f + sq.r) % 2 ? "d" : "l");
+    if (last.includes(sq.name)) el.classList.add("last");
+    if (sel === sq.name) el.classList.add("sel");
+    if (S.check === sq.name) el.classList.add("chk");
+    if (targets.includes(sq.name)) el.classList.add("tgt", ...(pieces[sq.name] ? ["cap"] : []));
+    const pc = pieces[sq.name];
+    if (pc) {
+      const span = document.createElement("span");
+      span.className = "pc " + (pc === pc.toUpperCase() ? "w" : "b");
+      span.textContent = GLYPH[pc.toLowerCase()] + VS;
+      el.appendChild(span);
+      if (yourTurn() && mineColor.test(pc)) el.classList.add("mine");
+    }
+    if (sq.row === 7) el.insertAdjacentHTML("beforeend", `<span class="coord f">${FILES[sq.f]}</span>`);
+    if (sq.col === 0) el.insertAdjacentHTML("beforeend", `<span class="coord r">${sq.r}</span>`);
+    el.onclick = () => clickSquare(sq.name, pc);
+    board.appendChild(el);
+  }
+
+  const botSide = S.you === "white" ? "black" : "white";
+  if (R) {
+    $("topName").innerHTML = `${R.game.opp} <small>${botSide}</small>`;
+    $("botName").innerHTML = `HumanChess <small>${R.game.elo} · ${S.you}</small>`;
+  } else {
+    $("topName").innerHTML = `Bot <small>${S.elo} · ${botSide}</small>`;
+    $("botName").innerHTML = auto() ? `Stockfish <small>${$("sf").value} · ${S.you}</small>` : `You <small>${S.you}</small>`;
+  }
+
+  const mv = $("moves");
+  mv.innerHTML = "";
+  if (R) {
+    const all = R.game.plies;
+    for (let i = 0; i < all.length; i += 2)
+      mv.insertAdjacentHTML("beforeend", `<span class="n">${i / 2 + 1}.</span>` +
+        [i, i + 1].map(j => all[j] ? `<span class="mv${j + 1 === R.k ? " cur" : ""}" data-k="${j + 1}">${all[j].san}</span>` : "<span></span>").join(""));
+    mv.querySelectorAll(".mv").forEach(el => el.onclick = () => { stopAuto(); showPly(+el.dataset.k); });
+    mv.querySelector(".cur")?.scrollIntoView({ block: "nearest" });
+  } else {
+    for (let i = 0; i < S.moves.length; i += 2)
+      mv.insertAdjacentHTML("beforeend",
+        `<span class="n">${i / 2 + 1}.</span><span>${S.moves[i]}</span><span>${S.moves[i + 1] || ""}</span>`);
+    mv.scrollTop = mv.scrollHeight;
+  }
+
+  $("undoBtn").disabled = busy || !S.moves.length;
+  $("resignBtn").disabled = busy || !!ended();
+  renderClocks();
+  renderBanner();
+  drawArrows();
+}
+
+function renderBanner() {
+  const b = $("banner");
+  b.className = "banner";
+  if (R) {
+    const n = R.game ? R.game.plies.length : 0;
+    if (!R.game) b.textContent = "";
+    else if (R.k < n) b.textContent = R.k
+      ? `${Math.ceil(R.k / 2)}${R.k % 2 ? "." : "…"} ${R.game.plies[R.k - 1].san}  (move ${Math.ceil(R.k / 2)} of ${Math.ceil(n / 2)})`
+      : `Start of game (${Math.ceil(n / 2)} moves)`;
+    else {
+      const s = botScore(R.game);
+      b.textContent = `${R.game.result}, ${R.game.termination}. ${s === 1 ? "HumanChess wins." : s === 0 ? `${R.game.opp} wins.` : "Draw."}`;
+    }
+    return;
+  }
+  if (flagged) b.textContent = flagged === "you" ? "You ran out of time. The bot wins." : "The bot ran out of time. You win.";
+  else if (S.result) {
+    const youWin = (S.result === "1-0" && S.you === "white") || (S.result === "0-1" && S.you === "black");
+    const head = S.result === "1/2-1/2" ? "Draw" : youWin ? "You win" : "The bot wins";
+    b.textContent = `${head} (${S.reason}).`;
+  } else if (busy) { b.textContent = `${busy === "sf" ? "Stockfish" : "The bot"} is thinking…`; b.className = "banner thinking"; }
+  else if (auto()) b.textContent = "Watching. Untick “Stockfish plays for me” to take over.";
+  else b.textContent = S.moves.length ? "Your move." : `You play ${S.you}. Your move.`;
+}
+
+function renderClocks() {
+  for (const id of ["topClock", "botClock"]) $(id).hidden = !!R;
+  if (R) return;
+  const set = (el, s, running) => {
+    el.textContent = fmt(s);
+    el.classList.toggle("running", running && !untimed());
+    el.classList.toggle("low", !untimed() && s < 20);
+  };
+  const live = !ended();
+  set($("topClock"), clocks.bot, live && S.turn !== S.you);
+  set($("botClock"), clocks.you, live && S.turn === S.you);
+}
+
+function startTick(who) {
+  stopTick();
+  if (untimed() || ended()) return;
+  if (who === "you" && !S.moves.length) return;   // clock starts after the first move
+  tickFrom = performance.now();
+  tickBase = clocks[who];
+  ticking = setInterval(() => {
+    clocks[who] = tickBase - (performance.now() - tickFrom) / 1000;
+    if (clocks[who] <= 0) { clocks[who] = 0; flagged = who; stopTick(); render(); return; }
+    renderClocks();
+  }, 100);
+}
+function stopTick() { if (ticking) clearInterval(ticking); ticking = null; }
+
+function clickSquare(name, pc) {
+  if (!yourTurn() || busy || auto()) return;
+  const mine = pc && (S.you === "white" ? /[A-Z]/ : /[a-z]/).test(pc);
+  if (sel) {
+    const opts = S.legal.filter(m => m.slice(0, 4) === sel + name);
+    if (opts.length) {
+      if (opts.length > 1) return askPromo(sel, name);
+      return play(opts[0]);
+    }
+  }
+  sel = mine && sel !== name ? name : null;
+  render();
+}
+
+function askPromo(from, to) {
+  pendingPromo = { from, to };
+  const cls = S.you === "white" ? "w" : "b";
+  $("promoBtns").innerHTML = ["q", "r", "b", "n"].map(p =>
+    `<button data-p="${p}"><span class="pc ${cls}" style="font-size:40px">${GLYPH[p]}${VS}</span></button>`).join("");
+  $("promoBtns").querySelectorAll("button").forEach(b => b.onclick = () => {
+    $("promo").classList.remove("on");
+    play(from + to + b.dataset.p);
+  });
+  $("promo").classList.add("on");
+}
+
+async function play(uci) {
+  sel = null;
+  stopTick();
+  const myGame = gameId;
+  try {
+    S = await api("/api/move", { uci });
+  } catch (e) { return showErr(e); }
+  if (myGame !== gameId) return;
+  if (!untimed()) clocks.you += S.inc;
+  thoughts = null;
+  renderThoughts();
+  await botTurn();
+}
+
+async function botTurn() {
+  if (ended() || S.turn === S.you) { render(); yourTurnStarts(); return; }
+  const myGame = gameId;
+  busy = true;
+  render();
+  startTick("bot");
+  const t0 = performance.now();
+  let res;
+  try {
+    res = await api("/api/bot", { clock_bot: Math.max(clocks.bot, 0.1), clock_you: Math.max(clocks.you, 0.1) });
+  } catch (e) { busy = false; stopTick(); render(); return showErr(e); }
+  if (myGame !== gameId) return;
+
+  const think = res.thoughts.think;
+  const waited = (performance.now() - t0) / 1000;
+  if ($("timing").checked && think > waited && !untimed()) {
+    // wait out the rest of the predicted think time, unless the bot would flag first
+    const wait = Math.min(think - waited, clocks.bot);
+    await new Promise(r => setTimeout(r, wait * 1000));
+    if (myGame !== gameId) return;
+  }
+  stopTick();
+  if (flagged) { busy = false; render(); return; }
+  if (!untimed()) {
+    clocks.bot = Math.max(0.1, tickBase - think);   // charge the predicted think time, not the compute time
+    if (res.thoughts.played) clocks.bot += res.inc;
+  }
+  S = res;
+  thoughts = res.thoughts;
+  busy = false;
+  renderThoughts();
+  render();
+  yourTurnStarts();
+}
+
+function yourTurnStarts() {
+  if (ended()) return;
+  startTick("you");
+  if (auto()) stockfishTurn();
+}
+
+async function stockfishTurn() {
+  const myGame = gameId;
+  busy = "sf";
+  render();
+  // a short pause so you can read the bot's last move before Stockfish replies
+  await new Promise(r => setTimeout(r, 900));
+  if (myGame !== gameId) return;
+  if (!auto() || !yourTurn()) { busy = false; render(); return; }
+  try {
+    S = await api("/api/stockfish", { elo: +$("sf").value, time: 0.3 });
+  } catch (e) { busy = false; render(); return showErr(e); }
+  if (myGame !== gameId) return;
+  stopTick();
+  busy = false;
+  if (!untimed()) clocks.you += S.inc;
+  await botTurn();
+}
+
+function renderThoughts() {
+  const cons = $("cons"), facts = $("facts");
+  if (!thoughts) {
+    let msg = S && S.moves.length ? "Waiting for the bot…" : "The bot's options appear here after it moves.";
+    if (R && R.game) {
+      const p = R.game.plies[R.k - 1];
+      msg = !p ? "Step forward to see what the bot weighed on each of its moves."
+          : botMoved(R.k) ? "Working out what it considered…" : `${R.game.opp} played ${p.san}. Step forward for the bot's reply.`;
+    }
+    cons.innerHTML = `<p class="empty">${msg}</p>`;
+    facts.innerHTML = "";
+    return;
+  }
+  $("consTitle").textContent = `What a ${S.elo} player considered`;
+  const max = thoughts.considered[0]?.p || 1;
+  cons.innerHTML = `<ul class="cons">${thoughts.considered.filter(c => c.p >= 0.005).map(c => `
+    <li class="${c.san === thoughts.played ? "played" : ""}">
+      <span class="san">${c.san}</span>
+      <span class="bar"><i style="width:${(c.p / max * 100).toFixed(1)}%"></i></span>
+      <span class="pct">${(c.p * 100).toFixed(c.p < 0.1 ? 1 : 0)}%</span>
+    </li>`).join("")}</ul>`;
+  const o = thoughts.outcome;
+  const playedP = thoughts.considered.find(c => c.san === thoughts.played)?.p;
+  facts.innerHTML = `
+    <div class="facts">
+      <span>Played</span><span>${thoughts.played ?? "resigned"}</span>
+      <span>Chance a human picks it</span><span>${playedP != null ? (playedP * 100).toFixed(1) + "%" : "<1%"}</span>
+      <span>Think time</span><span>${thoughts.think.toFixed(1)}s</span>
+    </div>
+    <div class="wdl" title="How the bot rates its chances">
+      <i class="w" style="width:${o.win * 100}%"></i><i class="dr" style="width:${o.draw * 100}%"></i><i class="ls" style="width:${o.loss * 100}%"></i>
+    </div>
+    <div class="wdlkey"><span>bot wins ${(o.win * 100).toFixed(0)}%</span><span>draw ${(o.draw * 100).toFixed(0)}%</span><span>loses ${(o.loss * 100).toFixed(0)}%</span></div>`;
+}
+
+function drawArrows() {
+  const svg = $("arrowsSvg");
+  svg.innerHTML = "";
+  if (!$("arrows").checked || !thoughts || !S) return;
+  const flip = S.you === "black";
+  const center = sq => {
+    const f = FILES.indexOf(sq[0]), r = +sq[1];
+    const col = flip ? 7 - f : f, row = flip ? r - 1 : 8 - r;
+    return [col * 100 + 50, row * 100 + 50];
+  };
+  const top = thoughts.considered.filter(c => c.p >= 0.04).slice(0, 4).reverse();
+  for (const c of top) {
+    const [x1, y1] = center(c.uci.slice(0, 2)), [x2, y2] = center(c.uci.slice(2, 4));
+    const len = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    const head = 34, w = 7 + 15 * c.p, hw = 22;
+    const bx = x2 - ux * head, by = y2 - uy * head, px = -uy, py = ux;
+    const a = (0.3 + 0.6 * c.p).toFixed(2);
+    const color = c.san === thoughts.played ? `rgba(214, 140, 40, ${Math.max(+a, .75)})` : `rgba(var(--arrow), ${a})`;
+    svg.insertAdjacentHTML("beforeend", `
+      <line x1="${x1 + ux * 22}" y1="${y1 + uy * 22}" x2="${bx}" y2="${by}" style="stroke:${color}" stroke-width="${w}" stroke-linecap="round"/>
+      <polygon points="${x2},${y2} ${bx + px * hw},${by + py * hw} ${bx - px * hw},${by - py * hw}" style="fill:${color}"/>`);
+  }
+}
+
+function showErr(e) { $("err").textContent = e.message || String(e); setTimeout(() => $("err").textContent = "", 4000); }
+
+$("newBtn").onclick = async () => {
+  gameId++;
+  stopTick();
+  let color = $("color").value;
+  if (color === "random") color = Math.random() < .5 ? "white" : "black";
+  const minutes = +$("minutes").value || 5;
+  S = await api("/api/new", {
+    elo: +$("elo").value, your_elo: +$("your").value, color, minutes,
+    inc: +$("inc").value || 0, mode: $("mode").value, temperature: +$("temp").value,
+  });
+  clocks = { you: minutes * 60, bot: minutes * 60 };
+  flagged = null; busy = false; sel = null; thoughts = null;
+  renderThoughts();
+  await botTurn();
+};
+
+$("undoBtn").onclick = async () => {
+  if (busy) return;
+  stopTick();
+  S = await api("/api/undo", {});
+  flagged = null; sel = null; thoughts = null;
+  renderThoughts();
+  render();
+  if (!ended()) startTick("you");
+};
+
+$("resignBtn").onclick = async () => {
+  if (busy || ended()) return;
+  stopTick();
+  S = await api("/api/resign", {});
+  render();
+};
+
+// ---------- replay ----------
+
+const isBot = name => (name || "").startsWith("HumanChess");
+function botScore(g) {
+  if (g.result === "1/2-1/2") return 0.5;
+  return (g.result === "1-0") === isBot(g.white) ? 1 : 0;
+}
+// games start from the normal position, so odd plies are White's moves
+const botMoved = k => k > 0 && (k % 2 === 1) === (R.game.bot === "white");
+
+async function loadFiles() {
+  const keep = $("fileSel").value;
+  R.files = (await api("/api/matches")).files;
+  const sel = $("fileSel");
+  sel.innerHTML = R.files.map(f => `<option value="${f.name}">${f.name.replace(".pgn", "")} (${f.games.length})</option>`).join("");
+  sel.hidden = !R.files.length;
+  if (R.files.some(f => f.name === keep)) sel.value = keep;
+  renderList();
+}
+
+function renderList() {
+  const file = R.files.find(f => f.name === $("fileSel").value);
+  if (!file) {
+    $("summary").innerHTML = "";
+    $("glist").innerHTML = `<p class="empty">No saved matches yet. Run <code>python match.py</code> and they'll show up here.</p>`;
+    return;
+  }
+  const byEvent = {};
+  for (const g of file.games) {
+    const e = byEvent[g.event] ||= [0, 0, 0];
+    const s = botScore(g);
+    e[s === 1 ? 0 : s === 0.5 ? 1 : 2]++;
+  }
+  $("summary").innerHTML = Object.entries(byEvent).map(([ev, [w, d, l]]) =>
+    `<div><span>${ev.replace("HumanChess ", "Bot ")}</span><span>${w}W ${d}D ${l}L</span></div>`).join("");
+  $("glist").innerHTML = file.games.map((g, i) => {
+    const s = botScore(g), cls = s === 1 ? "w" : s === 0 ? "l" : "d";
+    const botWhite = isBot(g.white);
+    const on = R.game && R.fileName === file.name && R.gameIdx === i ? " on" : "";
+    return `<div class="gitem${on}" data-i="${i}"><span class="res ${cls}">${cls.toUpperCase()}</span>
+      <span>${(botWhite ? g.white : g.black).replace("HumanChess", "Bot")} as ${botWhite ? "White" : "Black"}
+      <small>${g.result} · ${g.termination} · ${Math.ceil(g.plies / 2)} moves</small></span></div>`;
+  }).join("");
+  $("glist").querySelectorAll(".gitem").forEach(el => el.onclick = () => openGame(file.name, +el.dataset.i));
+}
+
+async function openGame(fileName, i) {
+  stopAuto();
+  let game;
+  try { game = await api(`/api/match?file=${encodeURIComponent(fileName)}&game=${i}`); }
+  catch (e) { return showErr(e); }
+  if (!R) return;
+  Object.assign(R, { fileName, gameIdx: i, game, cache: {} });
+  renderList();
+  showPly(0);
+}
+
+async function showPly(k) {
+  if (!R || !R.game) return;
+  const g = R.game;
+  k = Math.max(0, Math.min(g.plies.length, k));
+  R.k = k;
+  const p = g.plies[k - 1];
+  S = { fen: p ? p.fen : g.start, legal: [], moves: g.plies.slice(0, k).map(x => x.san),
+        last: p?.uci, check: p?.check, you: g.bot, elo: g.elo, turn: k % 2 ? "black" : "white",
+        result: k === g.plies.length ? g.result : null, reason: g.termination };
+  sel = null;
+  thoughts = botMoved(k) ? R.cache[k] || null : null;
+  renderThoughts();
+  render();
+  if (botMoved(k) && !R.cache[k]) {
+    try {
+      const t = await api("/api/analyse", { fen: p.before, uci: p.uci, elo: g.elo, opp_elo: g.opp_elo });
+      if (R && R.game === g) R.cache[k] = t;
+      if (R && R.game === g && R.k === k) { thoughts = t; renderThoughts(); drawArrows(); }
+    } catch (e) { showErr(e); }
+  }
+}
+
+function stopAuto() {
+  if (R && R.timer) { clearInterval(R.timer); R.timer = null; }
+  $("autoBtn").innerHTML = "&#x25B6; Play";
+}
+function toggleAuto() {
+  if (!R || !R.game) return;
+  if (R.timer) return stopAuto();
+  if (R.k >= R.game.plies.length) showPly(0);
+  $("autoBtn").innerHTML = "&#x23F8; Pause";
+  R.timer = setInterval(() => {
+    if (!R || R.k >= R.game.plies.length) return stopAuto();
+    showPly(R.k + 1);
+  }, 1200);
+}
+
+$("firstBtn").onclick = () => { stopAuto(); showPly(0); };
+$("prevBtn").onclick = () => { stopAuto(); showPly(R.k - 1); };
+$("nextBtn").onclick = () => { stopAuto(); showPly(R.k + 1); };
+$("lastBtn").onclick = () => { stopAuto(); showPly(Infinity); };
+$("autoBtn").onclick = toggleAuto;
+$("fileSel").onchange = renderList;
+$("refreshBtn").onclick = () => loadFiles().catch(showErr);
+document.addEventListener("keydown", e => {
+  if (!R || !R.game || ["INPUT", "SELECT", "BUTTON"].includes(e.target.tagName)) return;
+  const go = { ArrowLeft: R.k - 1, ArrowRight: R.k + 1, Home: 0, End: Infinity }[e.key];
+  if (go !== undefined) { e.preventDefault(); stopAuto(); showPly(go); }
+  else if (e.key === " ") { e.preventDefault(); toggleAuto(); }
+});
+
+async function setTab(tab) {
+  const replay = tab === "replay";
+  $("tabPlay").classList.toggle("on", !replay);
+  $("tabReplay").classList.toggle("on", replay);
+  for (const id of ["playPanel", "playActions"]) $(id).hidden = replay;
+  for (const id of ["replayPanel", "nav", "navHint"]) $(id).hidden = !replay;
+  if (replay) {
+    if (R) return;
+    gameId++;            // abandon any bot move still in flight
+    stopTick();
+    busy = false;
+    R = { files: [], cache: {}, k: 0 };
+    try { await loadFiles(); } catch (e) { showErr(e); }
+    const first = R.files[0];
+    if (first && first.games.length) openGame(first.name, 0);
+  } else {
+    if (!R) return;
+    stopAuto();
+    R = null;
+    S = await api("/api/state");
+    thoughts = S.thoughts;
+    renderThoughts();
+    render();
+    if (yourTurn()) startTick("you");
+  }
+}
+$("tabPlay").onclick = () => { history.replaceState(null, "", "#"); setTab("play"); };
+$("tabReplay").onclick = () => { history.replaceState(null, "", "#replay"); setTab("replay"); };
+
+$("untimed").onchange = () => { if (S) { render(); if (untimed()) stopTick(); else if (yourTurn()) startTick("you"); } };
+
+(async () => {
+  S = await api("/api/state");
+  clocks = { you: S.base, bot: S.base };
+  thoughts = S.thoughts;
+  renderThoughts();
+  render();
+  startTick("you");
+  if (location.hash === "#replay") setTab("replay");
+})();
+</script>
+</body>
+</html>
